@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expensy-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: expensy-frontend
+  template:
+    metadata:
+      labels:
+        app: expensy-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: anne2693/expensy-frontend:latest
+          imagePullPolicy: Always
+          workingDir: /app
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: http://20.82.53.32
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: expensy-frontend
+spec:
+  type: LoadBalancer
+  selector:
+    app: expensy-frontend
+  ports:
+    - port: 80
+      targetPort: 3000
+
