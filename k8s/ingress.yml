@@ -2,18 +2,24 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: expensy-ingress
-  namespace: expensy-dev
+  namespace: default
   annotations:
     kubernetes.io/ingress.class: nginx
 spec:
   rules:
-    - host: nip.io  # Replace with your domain or test with nip.io
-      http:
+    - http:
         paths:
-          - path: /
+          - path: /frontend
             pathType: Prefix
             backend:
               service:
                 name: expensy-frontend
+                port:
+                  number: 80
+          - path: /backend
+            pathType: Prefix
+            backend:
+              service:
+                name: expensy-backend
                 port:
                   number: 80
