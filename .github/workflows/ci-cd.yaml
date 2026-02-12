@@ -7,23 +7,27 @@ on:
 
 env:
   IMAGE_TAG: ${{ github.sha }}
-  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
-  AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # -----------------------
+      # Checkout Code
+      # -----------------------
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # -----------------------
       # Setup Docker Buildx
+      # -----------------------
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # -----------------------
       # Login to DockerHub
+      # -----------------------
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
@@ -35,22 +39,27 @@ jobs:
       # -----------------------
       - name: Build & push backend
         run: |
-          docker build -t ${{ env.DOCKERHUB_USERNAME }}/expensy-backend:${IMAGE_TAG} \
-                       -t ${{ env.DOCKERHUB_USERNAME }}/expensy-backend:latest \
-                       ./expensy_backend
-          docker push ${{ env.DOCKERHUB_USERNAME }}/expensy-backend:${IMAGE_TAG}
-          docker push ${{ env.DOCKERHUB_USERNAME }}/expensy-backend:latest
+          docker build \
+            -t ${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:${IMAGE_TAG} \
+            -t ${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:latest \
+            ./expensy_backend
+
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:${IMAGE_TAG}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:latest
 
       # -----------------------
       # Build & Push Frontend
       # -----------------------
       - name: Build & push frontend
         run: |
-          docker build -t ${{ env.DOCKERHUB_USERNAME }}/expensy-frontend:${IMAGE_TAG} \
-                       -t ${{ env.DOCKERHUB_USERNAME }}/expensy-frontend:latest \
-                       ./expensy_frontend
-          docker push ${{ env.DOCKERHUB_USERNAME }}/expensy-frontend:${IMAGE_TAG}
-          docker push ${{ env.DOCKERHUB_USERNAME }}/expensy-frontend:latest
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} \
+            -t ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:${IMAGE_TAG} \
+            -t ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:latest \
+            ./expensy_frontend
+
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:${IMAGE_TAG}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:latest
 
       # -----------------------
       # Azure Login
@@ -66,8 +75,8 @@ jobs:
       - name: Set AKS context
         uses: azure/aks-set-context@v3
         with:
-          resource-group: ${{ env.AZURE_RESOURCE_GROUP }}
-          cluster-name: ${{ env.AKS_CLUSTER_NAME }}
+          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
 
       # -----------------------
       # Deploy with Helm
@@ -77,9 +86,8 @@ jobs:
           helm upgrade --install expensy ./helm/expensy \
             --namespace expensy-dev \
             --create-namespace \
-            --set backend.image.repository=${{ env.DOCKERHUB_USERNAME }}/expensy-backend \
+            --set backend.image.repository=${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend \
             --set backend.image.tag=${IMAGE_TAG} \
-            --set frontend.image.repository=${{ env.DOCKERHUB_USERNAME }}/expensy-frontend \
+            --set frontend.image.repository=${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend \
             --set frontend.image.tag=${IMAGE_TAG} \
             --atomic --wait
-            

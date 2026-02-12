@@ -3,20 +3,23 @@ kind: Ingress
 metadata:
   name: expensy-ingress
   namespace: default
-  annotations:
-    kubernetes.io/ingress.class: nginx
 spec:
+  ingressClassName: nginx
   rules:
-    - http:
+    - host: expensy.nip.io
+      http:
         paths:
-          - path: /frontend
+          # Frontend
+          - path: /
             pathType: Prefix
             backend:
               service:
                 name: expensy-frontend
                 port:
                   number: 80
-          - path: /backend
+
+          # Backend API
+          - path: /api
             pathType: Prefix
             backend:
               service:
