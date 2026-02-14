@@ -39,7 +39,7 @@ services:
       context: ./expensy_frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8706
+        NEXT_PUBLIC_API_URL: http://20.82.53.32
     container_name: expensy-frontend
     ports:
       - "3000:3000"
