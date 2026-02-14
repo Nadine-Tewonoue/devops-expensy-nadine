@@ -52,7 +52,7 @@ jobs:
       - name: Build & push frontend
         run: |
           docker build \
-            --build-arg NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} \
+            --build-arg NEXT_PUBLIC_API_URL=http://expensy-backend:8706 \
             -t ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:${IMAGE_TAG} \
             ./expensy_frontend
 
