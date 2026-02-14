@@ -43,7 +43,6 @@ jobs:
           docker build \
             -t ${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:${IMAGE_TAG} \
             ./expensy_backend
-
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:${IMAGE_TAG}
 
       # -----------------------
@@ -55,7 +54,6 @@ jobs:
             --build-arg NEXT_PUBLIC_API_URL=http://expensy-backend:8706 \
             -t ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:${IMAGE_TAG} \
             ./expensy_frontend
-
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:${IMAGE_TAG}
 
       # -----------------------
@@ -76,45 +74,42 @@ jobs:
           cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
 
       # -----------------------
-      # Create Namespace (if not exists)
+      # Create Namespace if it doesn't exist
       # -----------------------
-      - name: Create staging namespace
+      - name: Ensure namespace exists
         run: |
           kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 
       # -----------------------
       # Apply Kubernetes Secrets
       # -----------------------
-      - name: Apply Kubernetes Secrets
+      - name: Apply secrets
         run: |
           kubectl create secret generic expensy-secrets \
             --from-literal=MONGO_URI="${{ secrets.MONGO_URI }}" \
             --from-literal=REDIS_URL="${{ secrets.REDIS_URL }}" \
             --from-literal=DATABASE_URI="${{ secrets.DATABASE_URI }}" \
-            --from-literal=API_URL="${{ secrets.API_URL }}" \
+            --from-literal=API_URL="${{ secrets.NEXT_PUBLIC_API_URL }}" \
             --namespace $NAMESPACE \
             --dry-run=client -o yaml | kubectl apply -f -
 
       # -----------------------
-      # Deploy with kubectl apply
+      # Deploy Kubernetes manifests
       # -----------------------
-      - name: Deploy Kubernetes Manifests
+      - name: Deploy manifests
         run: |
           kubectl apply -n $NAMESPACE -f k8s/
 
       # -----------------------
-      # Update Backend Image
+      # Update backend & frontend images
       # -----------------------
-      - name: Set backend image
+      - name: Update backend image
         run: |
           kubectl set image deployment/expensy-backend \
             expensy-backend=${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:${IMAGE_TAG} \
             -n $NAMESPACE
 
-      # -----------------------
-      # Update Frontend Image
-      # -----------------------
-      - name: Set frontend image
+      - name: Update frontend image
         run: |
           kubectl set image deployment/expensy-frontend \
             expensy-frontend=${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:${IMAGE_TAG} \
