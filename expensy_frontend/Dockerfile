@@ -1,35 +1,27 @@
-# Stage 1: Build stage
+# ---------- Builder ----------
 FROM node:20-alpine AS builder
-
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-# Install all dependencies (including devDependencies)
-RUN npm install
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
-# Copy source code
 COPY . .
-
-# Build Next.js
 RUN npm run build
 
-# Stage 2: Production image
-FROM node:20-alpine
-
+# ---------- Runtime ----------
+FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Copy only the production-ready files from builder
+# Copy only what Next needs to run
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/.next ./.next
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/next.config.mjs ./next.config.mjs
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/.next ./.next
 
-# Set production environment
-ENV NODE_ENV=production
 EXPOSE 3000
-
-# Start Next.js server
-CMD ["npx", "next", "start"]
-
+CMD ["node", "node_modules/next/dist/bin/next", "start", "-p", "3000"]
