@@ -7,6 +7,7 @@ on:
 
 env:
   IMAGE_TAG: ${{ github.sha }}
+  NAMESPACE: staging
 
 jobs:
   build-and-deploy:
@@ -20,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
 
       # -----------------------
-      # Setup Docker Buildx
+      # Setup Docker
       # -----------------------
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -41,11 +42,9 @@ jobs:
         run: |
           docker build \
             -t ${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:${IMAGE_TAG} \
-            -t ${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:latest \
             ./expensy_backend
 
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:${IMAGE_TAG}
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:latest
 
       # -----------------------
       # Build & Push Frontend
@@ -55,11 +54,9 @@ jobs:
           docker build \
             --build-arg NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} \
             -t ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:${IMAGE_TAG} \
-            -t ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:latest \
             ./expensy_frontend
 
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:${IMAGE_TAG}
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:latest
 
       # -----------------------
       # Azure Login
@@ -79,15 +76,54 @@ jobs:
           cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
 
       # -----------------------
-      # Deploy with Helm
+      # Create Namespace (if not exists)
       # -----------------------
-      - name: Deploy with Helm
+      - name: Create staging namespace
         run: |
-          helm upgrade --install expensy ./helm/expensy \
-            --namespace expensy-dev \
-            --create-namespace \
-            --set backend.image.repository=${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend \
-            --set backend.image.tag=${IMAGE_TAG} \
-            --set frontend.image.repository=${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend \
-            --set frontend.image.tag=${IMAGE_TAG} \
-            --atomic --wait
+          kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
+      # -----------------------
+      # Apply Kubernetes Secrets
+      # -----------------------
+      - name: Apply Kubernetes Secrets
+        run: |
+          kubectl create secret generic expensy-secrets \
+            --from-literal=MONGO_URI="${{ secrets.MONGO_URI }}" \
+            --from-literal=REDIS_URL="${{ secrets.REDIS_URL }}" \
+            --from-literal=DATABASE_URI="${{ secrets.DATABASE_URI }}" \
+            --from-literal=API_URL="${{ secrets.API_URL }}" \
+            --namespace $NAMESPACE \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      # -----------------------
+      # Deploy with kubectl apply
+      # -----------------------
+      - name: Deploy Kubernetes Manifests
+        run: |
+          kubectl apply -n $NAMESPACE -f k8s/
+
+      # -----------------------
+      # Update Backend Image
+      # -----------------------
+      - name: Set backend image
+        run: |
+          kubectl set image deployment/expensy-backend \
+            expensy-backend=${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend:${IMAGE_TAG} \
+            -n $NAMESPACE
+
+      # -----------------------
+      # Update Frontend Image
+      # -----------------------
+      - name: Set frontend image
+        run: |
+          kubectl set image deployment/expensy-frontend \
+            expensy-frontend=${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend:${IMAGE_TAG} \
+            -n $NAMESPACE
+
+      # -----------------------
+      # Wait for rollout
+      # -----------------------
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/expensy-backend -n $NAMESPACE
+          kubectl rollout status deployment/expensy-frontend -n $NAMESPACE

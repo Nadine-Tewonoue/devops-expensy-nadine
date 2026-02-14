@@ -2,8 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: expensy-frontend
+  namespace: staging
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: expensy-frontend
@@ -13,25 +14,20 @@ spec:
         app: expensy-frontend
     spec:
       containers:
-        - name: frontend
-          image: anne2693/expensy-frontend:latest
-          imagePullPolicy: Always
-          workingDir: /app
+        - name: expensy-frontend
+          image: anne2693/expensy-frontend:latest  # CI/CD should overwrite
           ports:
             - containerPort: 3000
-          env:
-            - name: NEXT_PUBLIC_API_URL
-              value: http://20.82.53.32
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: expensy-frontend
+  namespace: staging
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: expensy-frontend
   ports:
     - port: 80
       targetPort: 3000
-

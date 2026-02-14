@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: expensy-backend
+  namespace: staging
 spec:
   replicas: 1
   selector:
@@ -13,32 +14,37 @@ spec:
         app: expensy-backend
     spec:
       containers:
-      - name: backend
-        image: anne2693/expensy-backend:latest
-        ports:
-        - containerPort: 8706
-        env:
-        - name: PORT
-          value: "8706"
-        - name: DATABASE_URI
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: DATABASE_URI
-        - name: REDIS_HOST
-          value: redis
-        - name: REDIS_PORT
-          value: "6379"
-        - name: REDIS_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: REDIS_PASSWORD
+        - name: expensy-backend
+          image: anne2693/expensy-backend:latest  # CI/CD should overwrite this
+          ports:
+            - containerPort: 8706
+          env:
+            - name: PORT
+              value: "8706"
+
+            - name: DATABASE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: expensy-secrets
+                  key: DATABASE_URI
+
+            - name: REDIS_HOST
+              value: redis-expensy
+
+            - name: REDIS_PORT
+              value: "6379"
+
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: expensy-secrets
+                  key: REDIS_PASSWORD
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend
+  name: expensy-backend
+  namespace: staging
 spec:
   type: ClusterIP
   selector:
