@@ -110,7 +110,7 @@ jobs:
           sleep 2
 
           # Step 2: Create secrets first (before any deployments)
-          envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
+          envsubst < k8s/expensy-secrets.yaml | kubectl apply -f - -n expensy
 
           # Step 3: Wait for secret to be ready
           kubectl get secret expensy-secrets -n expensy -o jsonpath='{.metadata.name}' 2>/dev/null || sleep 1
@@ -120,7 +120,7 @@ jobs:
 
           # Step 5: Apply all other Kubernetes manifests (excluding secrets)
           for file in k8s/*.yaml; do
-            [ "$file" != "k8s/secrets.yaml" ] && kubectl apply -f "$file" -n expensy
+            [ "$file" != "k8s/expensy-secrets.yaml" ] && kubectl apply -f "$file" -n expensy
           done
 
           # Step 6: Force pod restart to pick up new secrets
