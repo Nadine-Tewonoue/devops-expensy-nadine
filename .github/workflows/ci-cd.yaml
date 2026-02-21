@@ -123,24 +123,24 @@ jobs:
 
           # Apply infrastructure manifests before rolling out new app images
           for f in k8s/mongo*.yaml k8s/redis.yaml k8s/ingress.yaml; do
-            kubectl apply -f "$f" -n expensy-staging
+            kubectl apply -f "$f" -n expensy
           done
 
           # Upsert secrets without a deletion window (avoids race condition)
-          envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy-staging
+          envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
 
           # Roll out new images — set image already triggers a rollout,
           # so no explicit rollout restart is needed
-          kubectl set image -n expensy-staging deployment/backend \
+          kubectl set image -n expensy deployment/backend \
             backend=${{ env.BACKEND_IMAGE }}:${IMAGE_TAG}
-          kubectl set image -n expensy-staging deployment/frontend \
+          kubectl set image -n expensy deployment/frontend \
             frontend=${{ env.FRONTEND_IMAGE }}:${IMAGE_TAG}
 
           # Wait for rollout; undo automatically on timeout/failure
-          kubectl rollout status deployment/backend -n expensy-staging --timeout=300s \
-            || { kubectl rollout undo deployment/backend -n expensy-staging; exit 1; }
-          kubectl rollout status deployment/frontend -n expensy-staging --timeout=300s \
-            || { kubectl rollout undo deployment/frontend -n expensy-staging; exit 1; }
+          kubectl rollout status deployment/backend -n expensy --timeout=300s \
+            || { kubectl rollout undo deployment/backend -n expensy; exit 1; }
+          kubectl rollout status deployment/frontend -n expensy --timeout=300s \
+            || { kubectl rollout undo deployment/frontend -n expensy; exit 1; }
 
       - name: Smoke Tests
         run: |
@@ -191,26 +191,26 @@ jobs:
 
           # Apply infrastructure manifests before rolling out new app images
           for f in k8s/mongo*.yaml k8s/redis.yaml k8s/ingress.yaml; do
-            kubectl apply -f "$f" -n expensy-production
+            kubectl apply -f "$f" -n expensy
           done
 
           # Upsert secrets without a deletion window
-          envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy-production
+          envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
 
           # Roll out pinned, immutable image tags
-          kubectl set image -n expensy-production deployment/backend \
+          kubectl set image -n expensy deployment/backend \
             backend=${{ env.BACKEND_IMAGE }}:${IMAGE_TAG}
-          kubectl set image -n expensy-production deployment/frontend \
+          kubectl set image -n expensy deployment/frontend \
             frontend=${{ env.FRONTEND_IMAGE }}:${IMAGE_TAG}
 
           # Wait for rollout; undo automatically on timeout/failure
-          kubectl rollout status deployment/backend -n expensy-production --timeout=300s \
-            || { kubectl rollout undo deployment/backend -n expensy-production; exit 1; }
-          kubectl rollout status deployment/frontend -n expensy-production --timeout=300s \
-            || { kubectl rollout undo deployment/frontend -n expensy-production; exit 1; }
+          kubectl rollout status deployment/backend -n expensy --timeout=300s \
+            || { kubectl rollout undo deployment/backend -n expensy; exit 1; }
+          kubectl rollout status deployment/frontend -n expensy --timeout=300s \
+            || { kubectl rollout undo deployment/frontend -n expensy; exit 1; }
 
       - name: Verify Deployment
         run: |
           echo "Production verification..."
-          kubectl get pods -n expensy-production
-          kubectl get services -n expensy-production
+          kubectl get pods -n expensy
+          kubectl get services -n expensy
