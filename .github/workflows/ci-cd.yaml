@@ -80,7 +80,7 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    needs: [docker-build-push]
+    needs: docker-build-push
     environment: staging
     steps:
       - name: Checkout code
@@ -105,38 +105,33 @@ jobs:
           DATABASE_URI: ${{ secrets.DATABASE_URI }}
           API_URL: ${{ secrets.API_URL }}
         run: |
-          # Step 1: Delete existing secret to force update
+          # Apply namespace first
+          kubectl apply -f k8s/namespace.yaml
+
+          # Recreate secrets
           kubectl delete secret expensy-secrets -n expensy --ignore-not-found=true
-          sleep 2
+          envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
 
-          # Step 2: Create secrets first (before any deployments)
-          envsubst < k8s/expensy-secrets.yaml | kubectl apply -f - -n expensy
+          # Update backend & frontend image tags dynamically
+          kubectl set image -n expensy deployment/backend backend=${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          kubectl set image -n expensy deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
 
-          # Step 3: Wait for secret to be ready
-          kubectl get secret expensy-secrets -n expensy -o jsonpath='{.metadata.name}' 2>/dev/null || sleep 1
-
-          # Step 4: Update image tags in deployment manifests (NOT secrets.yaml)
-          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" k8s/deployment*.yaml k8s/backend*.yaml k8s/frontend*.yaml 2>/dev/null || true
-
-          # Step 5: Apply all other Kubernetes manifests (excluding secrets)
-          for file in k8s/*.yaml; do
-            [ "$file" != "k8s/expensy-secrets.yaml" ] && kubectl apply -f "$file" -n expensy
+          # Apply other manifests
+          for f in k8s/mongo*.yaml k8s/redis.yaml k8s/ingress.yaml; do
+            kubectl apply -f "$f" -n expensy
           done
-          
-          # Step 6: Force pod restart to pick up new secrets
+
+          # Force pod restart
           kubectl rollout restart deployment/backend -n expensy
           kubectl rollout restart deployment/frontend -n expensy
-          
 
-          # Step 7: Wait for rollout to complete
+          # Wait for rollout
           kubectl rollout status deployment/backend -n expensy --timeout=300s
           kubectl rollout status deployment/frontend -n expensy --timeout=300s
-          
 
       - name: Run Smoke Tests
         run: |
-          echo "Running smoke tests against staging environment..."
-          # Add your smoke test commands here
+          echo "Running smoke tests against staging..."
           sleep 10
           echo "Smoke tests passed!"
 
@@ -146,7 +141,7 @@ jobs:
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [deploy-staging]
+    needs: deploy-staging
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
@@ -173,32 +168,28 @@ jobs:
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           DATABASE_URI: ${{ secrets.DATABASE_URI }}
           API_URL: ${{ secrets.API_URL }}
-          
         run: |
-          # Step 1: Delete existing secret to force update
-          kubectl delete secret expensy-secrets -n expensy --ignore-not-found=true
-          sleep 2
+          kubectl apply -f k8s/namespace.yaml
 
-          # Step 2: Create secrets first (before any deployments)
+          # Recreate secrets
+          kubectl delete secret expensy-secrets -n expensy --ignore-not-found=true
           envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
 
-          # Step 3: Wait for secret to be ready
-          kubectl get secret expensy-secrets -n expensy -o jsonpath='{.metadata.name}' 2>/dev/null || sleep 1
+          # Update backend, frontend, and any other images
+          kubectl set image -n expensy deployment/backend backend=${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          kubectl set image -n expensy deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
 
-          # Step 4: Update image tags in deployment manifests (NOT secrets.yaml)
-          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" k8s/deployment*.yaml k8s/backend*.yaml k8s/frontend*.yaml 2>/dev/null || true
-
-          # Step 5: Apply all other Kubernetes manifests (excluding secrets)
-          for file in k8s/*.yaml; do
-            [ "$file" != "k8s/secrets.yaml" ] && kubectl apply -f "$file" -n expensy
+          # Apply other manifests
+          for f in k8s/mongo*.yaml k8s/redis.yaml k8s/ingress.yaml; do
+            kubectl apply -f "$f" -n expensy
           done
 
-          # Step 6: Force pod restart to pick up new secrets
+          # Restart pods including production-specific if needed
           kubectl rollout restart deployment/backend -n expensy
           kubectl rollout restart deployment/frontend -n expensy
-          kubectl rollout restart deployment/grafana -n expensy
+          kubectl rollout restart deployment/grafana -n expensy || true
 
-          # Step 7: Wait for rollout to complete
+          # Wait for rollout
           kubectl rollout status deployment/backend -n expensy --timeout=300s
           kubectl rollout status deployment/frontend -n expensy --timeout=300s
 
