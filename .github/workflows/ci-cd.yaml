@@ -99,29 +99,30 @@ jobs:
 
       - name: Deploy to Staging
         env:
-          MONGO_USER: ${{ secrets.MONGO_USER }}
-          MONGO_PASS: ${{ secrets.MONGO_PASS }}
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-          DATABASE_URI: ${{ secrets.DATABASE_URI }}
-          API_URL: ${{ secrets.API_URL }}
+          api_url: ${{ secrets.API_URL }}
+          database_uri: ${{ secrets.DATABASE_URI }}
+          mongo_user: ${{ secrets.MONGO_USER }}
+          mongo_pass: ${{ secrets.MONGO_PASS }}
+          next_public_api_url: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          redis_password: ${{ secrets.REDIS_PASSWORD }}
         run: |
-          # Apply namespace first
+          # Apply namespace
           kubectl apply -f k8s/namespace.yaml
 
-          # Recreate secrets
+          # Apply secrets
           kubectl delete secret expensy-secrets -n expensy --ignore-not-found=true
           envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
 
-          # Update backend & frontend image tags dynamically
+          # Update backend & frontend images
           kubectl set image -n expensy deployment/backend backend=${{ env.BACKEND_IMAGE }}:latest
           kubectl set image -n expensy deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}:latest
-          
+
           # Apply other manifests
           for f in k8s/mongo*.yaml k8s/redis.yaml k8s/ingress.yaml; do
             kubectl apply -f "$f" -n expensy
           done
 
-          # Force pod restart
+          # Restart pods
           kubectl rollout restart deployment/backend -n expensy
           kubectl rollout restart deployment/frontend -n expensy
 
@@ -129,9 +130,9 @@ jobs:
           kubectl rollout status deployment/backend -n expensy --timeout=300s
           kubectl rollout status deployment/frontend -n expensy --timeout=300s
 
-      - name: Run Smoke Tests
+      - name: Smoke Tests
         run: |
-          echo "Running smoke tests against staging..."
+          echo "Running smoke tests..."
           sleep 10
           echo "Smoke tests passed!"
 
@@ -163,39 +164,31 @@ jobs:
 
       - name: Deploy to Production
         env:
-          MONGO_USER: ${{ secrets.MONGO_USER }}
-          MONGO_PASS: ${{ secrets.MONGO_PASS }}
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-          DATABASE_URI: ${{ secrets.DATABASE_URI }}
-          API_URL: ${{ secrets.API_URL }}
+          api_url: ${{ secrets.API_URL }}
+          database_uri: ${{ secrets.DATABASE_URI }}
+          mongo_user: ${{ secrets.MONGO_USER }}
+          mongo_pass: ${{ secrets.MONGO_PASS }}
+          next_public_api_url: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          redis_password: ${{ secrets.REDIS_PASSWORD }}
         run: |
           kubectl apply -f k8s/namespace.yaml
-
-          # Recreate secrets
           kubectl delete secret expensy-secrets -n expensy --ignore-not-found=true
           envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
 
-          # Update backend, frontend, and any other images
           kubectl set image -n expensy deployment/backend backend=${{ env.BACKEND_IMAGE }}:${{ github.sha }}
           kubectl set image -n expensy deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
 
-          # Apply other manifests
           for f in k8s/mongo*.yaml k8s/redis.yaml k8s/ingress.yaml; do
             kubectl apply -f "$f" -n expensy
           done
 
-          # Restart pods including production-specific if needed
           kubectl rollout restart deployment/backend -n expensy
           kubectl rollout restart deployment/frontend -n expensy
-          kubectl rollout restart deployment/grafana -n expensy || true
-
-          # Wait for rollout
           kubectl rollout status deployment/backend -n expensy --timeout=300s
           kubectl rollout status deployment/frontend -n expensy --timeout=300s
 
       - name: Verify Deployment
         run: |
-          echo "Verifying production deployment..."
+          echo "Production verification..."
           kubectl get pods -n expensy
           kubectl get services -n expensy
-          echo "Production deployment verified!"
