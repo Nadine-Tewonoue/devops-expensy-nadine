@@ -113,9 +113,9 @@ jobs:
           envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
 
           # Update backend & frontend image tags dynamically
-          kubectl set image -n expensy deployment/backend backend=${{ env.BACKEND_IMAGE }}:${{ github.sha }}
-          kubectl set image -n expensy deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
-
+          kubectl set image -n expensy deployment/backend backend=${{ env.BACKEND_IMAGE }}:latest
+          kubectl set image -n expensy deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}:latest
+          
           # Apply other manifests
           for f in k8s/mongo*.yaml k8s/redis.yaml k8s/ingress.yaml; do
             kubectl apply -f "$f" -n expensy
