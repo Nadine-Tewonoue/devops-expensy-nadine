@@ -25,7 +25,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: expensy-secrets
-                  key: redis_password
+                  key: REDIS_PASSWORD
           args: ["--requirepass", "$(REDIS_PASSWORD)"]
 ---
 apiVersion: v1

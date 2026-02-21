@@ -23,12 +23,12 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: expensy-secrets
-                  key: mongo_user
+                  key: MONGO_USER
             - name: MONGO_INITDB_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: expensy-secrets
-                  key: mongo_pass
+                  key: MONGO_PASS
 ---
 apiVersion: v1
 kind: Service

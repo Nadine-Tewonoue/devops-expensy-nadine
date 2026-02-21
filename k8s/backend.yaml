@@ -25,7 +25,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: expensy-secrets
-                  key: database_uri
+                  key: DATABASE_URI
             - name: REDIS_HOST
               value: "redis"
             - name: REDIS_PORT
@@ -34,7 +34,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: expensy-secrets
-                  key: redis_password
+                  key: REDIS_PASSWORD
 ---
 apiVersion: v1
 kind: Service
