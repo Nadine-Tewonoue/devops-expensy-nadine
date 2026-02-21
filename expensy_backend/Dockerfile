@@ -1,20 +1,29 @@
-FROM node:20-alpine
-
+# ---------- Builder ----------
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy package files
+# Install deps first (better caching)
 COPY package*.json ./
+RUN npm ci
 
-# Install dependencies
-RUN npm install --production
+# Copy source and build
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
 
-# Copy source code
-COPY . .
+# ---------- Runtime ----------
+FROM node:20-alpine AS runtime
+WORKDIR /app
 
-# Build backend (if using TypeScript)
-RUN npm run build || echo "No build step, skipping"
+# Install only production deps
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-# Expose backend port
+# Copy compiled output
+COPY --from=builder /app/dist ./dist
+
+# If your app loads .env at runtime, you normally DON'T bake it in.
+# Use env vars in Docker/Kubernetes instead.
+
 EXPOSE 8706
-
 CMD ["node", "dist/server.js"]

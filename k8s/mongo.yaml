@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: mongo
-          image: mongo:6
+          image: mongo
           ports:
             - containerPort: 27017
           env:
@@ -29,13 +29,6 @@ spec:
                 secretKeyRef:
                   name: expensy-secrets
                   key: mongo_pass
-          volumeMounts:
-            - name: mongo-data
-              mountPath: /data/db
-      volumes:
-        - name: mongo-data
-          persistentVolumeClaim:
-            claimName: mongo-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -48,3 +41,5 @@ spec:
   ports:
     - port: 27017
       targetPort: 27017
+
+      

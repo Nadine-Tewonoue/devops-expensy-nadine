@@ -1,39 +1,49 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: frontend
+  name: backend
   namespace: expensy
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: frontend
+      app: backend
   template:
     metadata:
       labels:
-        app: frontend
+        app: backend
     spec:
       containers:
-        - name: frontend
-          image: anne2693/expensy-frontend:latest
+        - name: backend
+          image: anne2693/expensy-backend:latest
           ports:
-            - containerPort: 3000
+            - containerPort: 8706
           env:
-            - name: API_URL
+            - name: PORT
+              value: "8706"
+            - name: DATABASE_URI
               valueFrom:
                 secretKeyRef:
                   name: expensy-secrets
-                  key: API_URL
+                  key: database_uri
+            - name: REDIS_HOST
+              value: "redis"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: expensy-secrets
+                  key: redis_password
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend
+  name: backend
   namespace: expensy
 spec:
-  type: LoadBalancer
   selector:
-    app: frontend
+    app: backend
   ports:
     - port: 80
-      targetPort: 3000
+      targetPort: 8706
