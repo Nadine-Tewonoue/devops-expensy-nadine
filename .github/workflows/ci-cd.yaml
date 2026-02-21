@@ -18,7 +18,8 @@ jobs:
   docker-build-push:
     name: Docker Build & Push
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'pull_request'
+    outputs:
+      image-tag: ${{ steps.image-tag.outputs.tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,11 +27,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Only authenticate and push on pushes to main, not on PRs
       - name: Login to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Produce a consistent short SHA used by all deploy jobs
+      - name: Compute image tag
+        id: image-tag
+        run: echo "tag=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata for Backend
         id: meta-backend
@@ -38,7 +46,7 @@ jobs:
         with:
           images: ${{ env.BACKEND_IMAGE }}
           tags: |
-            type=sha,prefix=
+            type=raw,value=${{ steps.image-tag.outputs.tag }}
             type=raw,value=latest
 
       - name: Build and Push Backend Image
@@ -46,7 +54,8 @@ jobs:
         with:
           context: ./expensy_backend
           file: ./expensy_backend/Dockerfile
-          push: true
+          # Only push on merges to main; PRs only build (no push)
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
           cache-from: type=gha
@@ -58,7 +67,7 @@ jobs:
         with:
           images: ${{ env.FRONTEND_IMAGE }}
           tags: |
-            type=sha,prefix=
+            type=raw,value=${{ steps.image-tag.outputs.tag }}
             type=raw,value=latest
 
       - name: Build and Push Frontend Image
@@ -66,7 +75,7 @@ jobs:
         with:
           context: ./expensy_frontend
           file: ./expensy_frontend/Dockerfile
-          push: true
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
           cache-from: type=gha
@@ -81,6 +90,8 @@ jobs:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     needs: docker-build-push
+    # Only deploy on pushes to main, never on PRs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: staging
     steps:
       - name: Checkout code
@@ -99,6 +110,7 @@ jobs:
 
       - name: Deploy to Staging
         env:
+          IMAGE_TAG: ${{ needs.docker-build-push.outputs.image-tag }}
           API_URL: ${{ secrets.API_URL }}
           DATABASE_URI: ${{ secrets.DATABASE_URI }}
           MONGO_USER: ${{ secrets.MONGO_USER }}
@@ -106,34 +118,35 @@ jobs:
           NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
         run: |
-          # Apply namespace
+          # Apply namespace first
           kubectl apply -f k8s/namespace.yaml
 
-          # Apply secrets
-          kubectl delete secret expensy-secrets -n expensy --ignore-not-found=true
-          envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
-
-          # Update backend & frontend images
-          kubectl set image -n expensy deployment/backend backend=${{ env.BACKEND_IMAGE }}
-          kubectl set image -n expensy deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}
-
-          # Apply other manifests
+          # Apply infrastructure manifests before rolling out new app images
           for f in k8s/mongo*.yaml k8s/redis.yaml k8s/ingress.yaml; do
-            kubectl apply -f "$f" -n expensy
+            kubectl apply -f "$f" -n expensy-staging
           done
 
-          # # Restart pods
-           kubectl rollout restart deployment/backend -n expensy
-           kubectl rollout restart deployment/frontend -n expensy
+          # Upsert secrets without a deletion window (avoids race condition)
+          envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy-staging
 
-          # # Wait for rollout
-           kubectl rollout status deployment/backend -n expensy --timeout=300s
-           kubectl rollout status deployment/frontend -n expensy --timeout=300s
+          # Roll out new images — set image already triggers a rollout,
+          # so no explicit rollout restart is needed
+          kubectl set image -n expensy-staging deployment/backend \
+            backend=${{ env.BACKEND_IMAGE }}:${IMAGE_TAG}
+          kubectl set image -n expensy-staging deployment/frontend \
+            frontend=${{ env.FRONTEND_IMAGE }}:${IMAGE_TAG}
+
+          # Wait for rollout; undo automatically on timeout/failure
+          kubectl rollout status deployment/backend -n expensy-staging --timeout=300s \
+            || { kubectl rollout undo deployment/backend -n expensy-staging; exit 1; }
+          kubectl rollout status deployment/frontend -n expensy-staging --timeout=300s \
+            || { kubectl rollout undo deployment/frontend -n expensy-staging; exit 1; }
 
       - name: Smoke Tests
         run: |
-          echo "Running smoke tests..."
-          sleep 10
+          echo "Running smoke tests against staging..."
+          STAGING_URL="https://staging.expensy.example.com"
+          curl --retry 5 --retry-delay 5 --fail "$STAGING_URL/health"
           echo "Smoke tests passed!"
 
   # ============================================
@@ -142,7 +155,9 @@ jobs:
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: deploy-staging
+    needs:
+      - docker-build-push
+      - deploy-staging
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
@@ -164,6 +179,7 @@ jobs:
 
       - name: Deploy to Production
         env:
+          IMAGE_TAG: ${{ needs.docker-build-push.outputs.image-tag }}
           API_URL: ${{ secrets.API_URL }}
           DATABASE_URI: ${{ secrets.DATABASE_URI }}
           MONGO_USER: ${{ secrets.MONGO_USER }}
@@ -172,23 +188,29 @@ jobs:
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
         run: |
           kubectl apply -f k8s/namespace.yaml
-          kubectl delete secret expensy-secrets -n expensy --ignore-not-found=true
-          envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
 
-          kubectl set image -n expensy deployment/backend backend=${{ env.BACKEND_IMAGE }}:${{ github.sha }}
-          kubectl set image -n expensy deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
-
+          # Apply infrastructure manifests before rolling out new app images
           for f in k8s/mongo*.yaml k8s/redis.yaml k8s/ingress.yaml; do
-            kubectl apply -f "$f" -n expensy
+            kubectl apply -f "$f" -n expensy-production
           done
 
-           kubectl rollout restart deployment/backend -n expensy
-           kubectl rollout restart deployment/frontend -n expensy
-           kubectl rollout status deployment/backend -n expensy --timeout=300s
-           kubectl rollout status deployment/frontend -n expensy --timeout=300s
+          # Upsert secrets without a deletion window
+          envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy-production
+
+          # Roll out pinned, immutable image tags
+          kubectl set image -n expensy-production deployment/backend \
+            backend=${{ env.BACKEND_IMAGE }}:${IMAGE_TAG}
+          kubectl set image -n expensy-production deployment/frontend \
+            frontend=${{ env.FRONTEND_IMAGE }}:${IMAGE_TAG}
+
+          # Wait for rollout; undo automatically on timeout/failure
+          kubectl rollout status deployment/backend -n expensy-production --timeout=300s \
+            || { kubectl rollout undo deployment/backend -n expensy-production; exit 1; }
+          kubectl rollout status deployment/frontend -n expensy-production --timeout=300s \
+            || { kubectl rollout undo deployment/frontend -n expensy-production; exit 1; }
 
       - name: Verify Deployment
         run: |
           echo "Production verification..."
-          kubectl get pods -n expensy
-          kubectl get services -n expensy
+          kubectl get pods -n expensy-production
+          kubectl get services -n expensy-production
