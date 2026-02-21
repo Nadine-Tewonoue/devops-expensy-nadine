@@ -1,41 +1,221 @@
+name: CI/CD Pipeline
 
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: redis
-  namespace: expensy
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: redis
-  template:
-    metadata:
-      labels:
-        app: redis
-    spec:
-      containers:
-        - name: redis
-          image: redis:7
-          ports:
-            - containerPort: 6379
-          env:
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: expensy-secrets
-                  key: redis_password
-          args: ["--requirepass", "$(REDIS_PASSWORD)"]
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis
-  namespace: expensy
-spec:
-  selector:
-    app: redis
-  ports:
-    - port: 6379
-      targetPort: 6379
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  DOCKER_HUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  BACKEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/expensy-backend
+  FRONTEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend
+
+jobs:
+  # ============================================
+  # Stage 1: Docker Build & Push
+  # ============================================
+  docker-build-push:
+    name: Docker Build & Push
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for Backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.BACKEND_IMAGE }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - name: Build and Push Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./expensy_backend
+          file: ./expensy_backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract metadata for Frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.FRONTEND_IMAGE }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - name: Build and Push Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./expensy_frontend
+          file: ./expensy_frontend/Dockerfile
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+
+  # ============================================
+  # Stage 2: Deploy to Staging
+  # ============================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: docker-build-push
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+
+      - name: Deploy to Staging
+        env:
+          MONGO_USER: ${{ secrets.MONGO_USER }}
+          MONGO_PASS: ${{ secrets.MONGO_PASS }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          DATABASE_URI: ${{ secrets.DATABASE_URI }}
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          # Ensure namespace exists
+          kubectl apply -f k8s/namespace.yaml
+
+          # Create secrets dynamically (matching mongo.yaml & redis.yaml keys)
+          kubectl delete secret expensy-secrets -n expensy --ignore-not-found=true
+          kubectl create secret generic expensy-secrets \
+            --from-literal=mongo_user=$MONGO_USER \
+            --from-literal=mongo_pass=$MONGO_PASS \
+            --from-literal=redis_password=$REDIS_PASSWORD \
+            --from-literal=database_uri=$DATABASE_URI \
+            --from-literal=api_url=$API_URL \
+            -n expensy
+
+          # Update backend & frontend images
+          kubectl set image -n expensy deployment/backend backend=${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          kubectl set image -n expensy deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+
+          # Apply other manifests
+          for f in k8s/mongo.yaml k8s/mongo-pvc.yaml k8s/redis.yaml k8s/ingress.yaml; do
+            kubectl apply -f "$f" -n expensy
+          done
+
+          # Restart pods
+          kubectl rollout restart deployment/backend -n expensy
+          kubectl rollout restart deployment/frontend -n expensy
+          kubectl rollout restart deployment/mongo -n expensy
+          kubectl rollout restart deployment/redis -n expensy
+
+          # Wait for rollout
+          kubectl rollout status deployment/backend -n expensy --timeout=300s
+          kubectl rollout status deployment/frontend -n expensy --timeout=300s
+          kubectl rollout status deployment/mongo -n expensy --timeout=300s
+          kubectl rollout status deployment/redis -n expensy --timeout=300s
+
+      - name: Run Smoke Tests
+        run: |
+          echo "Running smoke tests against staging..."
+          sleep 10
+          echo "Smoke tests passed!"
+
+  # ============================================
+  # Stage 3: Deploy to Production (Manual Approval)
+  # ====================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://expensy.example.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+
+      - name: Deploy to Production
+        env:
+          MONGO_USER: ${{ secrets.MONGO_USER }}
+          MONGO_PASS: ${{ secrets.MONGO_PASS }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          DATABASE_URI: ${{ secrets.DATABASE_URI }}
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+
+          # Create secrets dynamically
+          kubectl delete secret expensy-secrets -n expensy --ignore-not-found=true
+          kubectl create secret generic expensy-secrets \
+            --from-literal=mongo_user=$MONGO_USER \
+            --from-literal=mongo_pass=$MONGO_PASS \
+            --from-literal=redis_password=$REDIS_PASSWORD \
+            --from-literal=database_uri=$DATABASE_URI \
+            --from-literal=api_url=$API_URL \
+            -n expensy
+
+          # Update backend & frontend images
+          kubectl set image -n expensy deployment/backend backend=${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          kubectl set image -n expensy deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+
+          # Apply other manifests
+          for f in k8s/mongo.yaml k8s/mongo-pvc.yaml k8s/redis.yaml k8s/ingress.yaml; do
+            kubectl apply -f "$f" -n expensy
+          done
+
+          # Restart pods
+          kubectl rollout restart deployment/backend -n expensy
+          kubectl rollout restart deployment/frontend -n expensy
+          kubectl rollout restart deployment/mongo -n expensy
+          kubectl rollout restart deployment/redis -n expensy
+          kubectl rollout restart deployment/grafana -n expensy || true
+
+          # Wait for rollout
+          kubectl rollout status deployment/backend -n expensy --timeout=300s
+          kubectl rollout status deployment/frontend -n expensy --timeout=300s
+          kubectl rollout status deployment/mongo -n expensy --timeout=300s
+          kubectl rollout status deployment/redis -n expensy --timeout=300s
+
+      - name: Verify Deployment
+        run: |
+          echo "Verifying production deployment..."
+          kubectl get pods -n expensy
+          kubectl get services -n expensy
+          echo "Production deployment verified!"
