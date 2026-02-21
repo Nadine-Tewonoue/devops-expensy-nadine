@@ -123,12 +123,12 @@ jobs:
           done
 
           # # Restart pods
-          # kubectl rollout restart deployment/backend -n expensy
-          # kubectl rollout restart deployment/frontend -n expensy
+           kubectl rollout restart deployment/backend -n expensy
+           kubectl rollout restart deployment/frontend -n expensy
 
           # # Wait for rollout
-          # kubectl rollout status deployment/backend -n expensy --timeout=300s
-          # kubectl rollout status deployment/frontend -n expensy --timeout=300s
+           kubectl rollout status deployment/backend -n expensy --timeout=300s
+           kubectl rollout status deployment/frontend -n expensy --timeout=300s
 
       - name: Smoke Tests
         run: |
@@ -182,10 +182,10 @@ jobs:
             kubectl apply -f "$f" -n expensy
           done
 
-          # kubectl rollout restart deployment/backend -n expensy
-          # kubectl rollout restart deployment/frontend -n expensy
-          # kubectl rollout status deployment/backend -n expensy --timeout=300s
-          # kubectl rollout status deployment/frontend -n expensy --timeout=300s
+           kubectl rollout restart deployment/backend -n expensy
+           kubectl rollout restart deployment/frontend -n expensy
+           kubectl rollout status deployment/backend -n expensy --timeout=300s
+           kubectl rollout status deployment/frontend -n expensy --timeout=300s
 
       - name: Verify Deployment
         run: |
