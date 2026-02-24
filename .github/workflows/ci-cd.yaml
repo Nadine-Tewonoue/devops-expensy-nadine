@@ -161,11 +161,11 @@ jobs:
             exit 1
           }
 
-      - name: Run Smoke Tests
+      - name: Smoke Tests
         run: |
-          echo "Running smoke tests against staging environment..."
-          # Add your smoke test commands here
-          sleep 10
+          echo "Running smoke tests against staging..."
+          STAGING_URL="https://staging.expensy.example.com/health"
+          curl --retry 5 --retry-delay 5 --fail "$STAGING_URL/health"
           echo "Smoke tests passed!"
 
 
@@ -181,7 +181,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
-      url: https://expensy.example.com
+      url: https://staging.expensy.example.com
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
