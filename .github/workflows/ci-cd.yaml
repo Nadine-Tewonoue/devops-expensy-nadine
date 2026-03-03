@@ -12,22 +12,21 @@ env:
   FRONTEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/expensy-frontend
 
 jobs:
-  # ============================================
-  # Stage 1: Docker Build & Push
-  # ============================================
+
+# ============================================
+# Stage 1: Docker Build & Push
+# ============================================
   docker-build-push:
     name: Docker Build & Push
     runs-on: ubuntu-latest
     outputs:
       image-tag: ${{ steps.image-tag.outputs.tag }}
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      # Only authenticate and push on pushes to main, not on PRs
       - name: Login to Docker Hub
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
@@ -35,143 +34,103 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Produce a consistent short SHA used by all deploy jobs
       - name: Compute image tag
         id: image-tag
         run: echo "tag=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
-      - name: Extract metadata for Backend
-        id: meta-backend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.BACKEND_IMAGE }}
-          tags: |
-            type=raw,value=${{ steps.image-tag.outputs.tag }}
-            type=raw,value=latest
-
-      - name: Build and Push Backend Image
+      - name: Build & Push Backend
         uses: docker/build-push-action@v5
         with:
           context: ./expensy_backend
           file: ./expensy_backend/Dockerfile
-          # Only push on merges to main; PRs only build (no push)
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ steps.image-tag.outputs.tag }}
+            ${{ env.BACKEND_IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Extract metadata for Frontend
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.FRONTEND_IMAGE }}
-          tags: |
-            type=raw,value=${{ steps.image-tag.outputs.tag }}
-            type=raw,value=latest
-
-      - name: Build and Push Frontend Image
+      - name: Build & Push Frontend
         uses: docker/build-push-action@v5
         with:
           context: ./expensy_frontend
           file: ./expensy_frontend/Dockerfile
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ steps.image-tag.outputs.tag }}
+            ${{ env.FRONTEND_IMAGE }}:latest
           build-args: |
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-  # ============================================
-  # Stage 2: Deploy to Staging
-  # ============================================
+# ============================================
+# Stage 2: Deploy to Staging
+# ============================================
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     needs: docker-build-push
-    # Only deploy on pushes to main, never on PRs
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: staging
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v2
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Set AKS Context
-        uses: azure/aks-set-context@v4
+      - uses: azure/aks-set-context@v4
         with:
           resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
           cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
 
-      - name: Deploy to Staging
+      - name: Deploy Full Stack
         env:
           IMAGE_TAG: ${{ needs.docker-build-push.outputs.image-tag }}
-          API_URL: ${{ secrets.API_URL }}
           DATABASE_URI: ${{ secrets.DATABASE_URI }}
           MONGO_USER: ${{ secrets.MONGO_USER }}
           MONGO_PASS: ${{ secrets.MONGO_PASS }}
-          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          GRAFANA_USER: ${{ secrets.GRAFANA_USER }}
+          GRAFANA_PASS: ${{ secrets.GRAFANA_PASS }}
         run: |
-          # 1. Apply namespace
           kubectl apply -f k8s/namespace.yaml
 
-          # 2. Apply infrastructure manifests (mongo, redis, ingress)
-          #    These must exist before the app pods start
+          # Infra
           kubectl apply -f k8s/mongo-pvc.yaml -n expensy
           kubectl apply -f k8s/mongo.yaml -n expensy
           kubectl apply -f k8s/redis.yaml -n expensy
-          kubectl apply -f k8s/ingress.yaml -n expensy
 
-          # 3. Upsert secrets (no delete → no race condition window)
+          # Monitoring
+          kubectl apply -f k8s/node-exporter.yaml -n expensy
+          kubectl apply -f k8s/grafana-pvc.yaml -n expensy
+
+          # Secrets
           envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
 
-          # 4. Apply deployment manifests to ensure they exist
-          #    (safe to re-apply; kubectl is idempotent)
+          # Monitoring Deployments
+          kubectl apply -f k8s/grafana.yaml -n expensy
+          kubectl apply -f k8s/prometheus-ingress.yaml -n expensy
+
+          # App Deployments
           kubectl apply -f k8s/backend.yaml -n expensy
           kubectl apply -f k8s/frontend.yaml -n expensy
+          kubectl apply -f k8s/ingress.yaml -n expensy
 
-          # 5. Update images to the newly built SHA tag
-          #    Container names match the 'name:' field in the deployment spec
-          kubectl set image deployment/backend \
-            backend=${{ env.BACKEND_IMAGE }}:${IMAGE_TAG} \
-            -n expensy
-          kubectl set image deployment/frontend \
-            frontend=${{ env.FRONTEND_IMAGE }}:${IMAGE_TAG} \
-            -n expensy
+          # Update Images
+          kubectl set image deployment/backend backend=${{ env.BACKEND_IMAGE }}:${IMAGE_TAG} -n expensy
+          kubectl set image deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}:${IMAGE_TAG} -n expensy
 
-          # 6. Wait for rollouts; print diagnostics and undo on failure
-          kubectl rollout status deployment/backend -n expensy --timeout=300s || {
-            echo "--- Backend rollout failed ---"
-            kubectl get pods -n expensy -l app=backend
-            kubectl describe pods -n expensy -l app=backend | tail -40
-            kubectl rollout undo deployment/backend -n expensy
-            exit 1
-          }
-          kubectl rollout status deployment/frontend -n expensy --timeout=300s || {
-            echo "--- Frontend rollout failed ---"
-            kubectl get pods -n expensy -l app=frontend
-            kubectl describe pods -n expensy -l app=frontend | tail -40
-            kubectl rollout undo deployment/frontend -n expensy
-            exit 1
-          }
+          # Wait for Rollouts
+          kubectl rollout status deployment/backend -n expensy --timeout=300s
+          kubectl rollout status deployment/frontend -n expensy --timeout=300s
+          kubectl rollout status deployment/grafana -n expensy --timeout=300s
 
-      - name: Smoke Tests
-        run: |
-          echo "Running smoke tests against staging..."
-          #STAGING_URL="https://staging.expensy.com/health"
-          #curl --retry 5 --retry-delay 5 --fail "$STAGING_URL/health"
-          echo "Smoke tests passed!"
-
-
-  # ============================================
-  # Stage 3: Deploy to Production (Manual Approval)
-  # ============================================
+# ============================================
+# Stage 3: Deploy to Production
+# ============================================
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
@@ -179,87 +138,56 @@ jobs:
       - docker-build-push
       - deploy-staging
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment:
-      name: production
-      #url: https://production.expensy.com
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    environment: production
 
-      - name: Azure Login
-        uses: azure/login@v2
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Set AKS Context
-        uses: azure/aks-set-context@v4
+      - uses: azure/aks-set-context@v4
         with:
           resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
           cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
 
-      - name: Deploy to Production
+      - name: Deploy Full Stack
         env:
           IMAGE_TAG: ${{ needs.docker-build-push.outputs.image-tag }}
-          API_URL: ${{ secrets.API_URL }}
           DATABASE_URI: ${{ secrets.DATABASE_URI }}
           MONGO_USER: ${{ secrets.MONGO_USER }}
           MONGO_PASS: ${{ secrets.MONGO_PASS }}
-          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          GRAFANA_USER: ${{ secrets.GRAFANA_USER }}
+          GRAFANA_PASS: ${{ secrets.GRAFANA_PASS }}
         run: |
-          # 1. Apply namespace
           kubectl apply -f k8s/namespace.yaml
 
-          # 2. Apply infrastructure manifests
           kubectl apply -f k8s/mongo-pvc.yaml -n expensy
           kubectl apply -f k8s/mongo.yaml -n expensy
           kubectl apply -f k8s/redis.yaml -n expensy
-          kubectl apply -f k8s/ingress.yaml -n expensy
 
-          # 3. Upsert secrets
+          kubectl apply -f k8s/node-exporter.yaml -n expensy
+          kubectl apply -f k8s/grafana-pvc.yaml -n expensy
+
           envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
 
-          # 4. Apply deployment manifests
+          kubectl apply -f k8s/grafana.yaml -n expensy
+          kubectl apply -f k8s/prometheus-ingress.yaml -n expensy
+
           kubectl apply -f k8s/backend.yaml -n expensy
           kubectl apply -f k8s/frontend.yaml -n expensy
+          kubectl apply -f k8s/ingress.yaml -n expensy
 
-          # 5. Update images to the exact SHA tag built in this run
-          kubectl set image deployment/backend \
-            backend=${{ env.BACKEND_IMAGE }}:${IMAGE_TAG} \
-            -n expensy
-          kubectl set image deployment/frontend \
-            frontend=${{ env.FRONTEND_IMAGE }}:${IMAGE_TAG} \
-            -n expensy
+          kubectl set image deployment/backend backend=${{ env.BACKEND_IMAGE }}:${IMAGE_TAG} -n expensy
+          kubectl set image deployment/frontend frontend=${{ env.FRONTEND_IMAGE }}:${IMAGE_TAG} -n expensy
 
-          # 6. Wait for rollouts; print diagnostics and undo on failure
-          kubectl rollout status deployment/backend -n expensy --timeout=300s || {
-            echo "--- Backend rollout failed ---"
-            kubectl get pods -n expensy -l app=backend
-            kubectl describe pods -n expensy -l app=backend | tail -40
-            kubectl rollout undo deployment/backend -n expensy
-            exit 1
-          }
-          kubectl rollout status deployment/frontend -n expensy --timeout=300s || {
-            echo "--- Frontend rollout failed ---"
-            kubectl get pods -n expensy -l app=frontend
-            kubectl describe pods -n expensy -l app=frontend | tail -40
-            kubectl rollout undo deployment/frontend -n expensy
-            exit 1
-          }
+          kubectl rollout status deployment/backend -n expensy --timeout=300s
+          kubectl rollout status deployment/frontend -n expensy --timeout=300s
+          kubectl rollout status deployment/grafana -n expensy --timeout=300s
 
       - name: Verify Deployment
         run: |
-          echo "Production verification..."
           kubectl get pods -n expensy
           kubectl get services -n expensy
-
-
-
-
-
-#az.diogohack.shop
-#dig +short dev.dionakids.com.br
-#89.117.169.223
-
-#dig +short dionakids.com.br 
-#89.117.169.223

@@ -18,6 +18,13 @@ spec:
           image: anne2693/expensy-frontend:latest
           ports:
             - containerPort: 3000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           env:
             - name: API_URL
               valueFrom:
@@ -31,7 +38,7 @@ metadata:
   name: frontend
   namespace: expensy
 spec:
-  type: ClusterIP # no need for load balancer as we already are using ingress
+  type: LoadBalancer
   selector:
     app: frontend
   ports:

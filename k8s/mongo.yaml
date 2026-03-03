@@ -15,20 +15,34 @@ spec:
     spec:
       containers:
         - name: mongo
-          image: mongo
+          image: mongo:6
           ports:
             - containerPort: 27017
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi
           env:
             - name: MONGO_INITDB_ROOT_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: expensy-secrets
-                  key: MONGO_USER
+                  key: mongo_user
             - name: MONGO_INITDB_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: expensy-secrets
-                  key: MONGO_PASS
+                  key: mongo_pass
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+      volumes:
+        - name: mongo-data
+          persistentVolumeClaim:
+            claimName: mongo-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -41,5 +55,3 @@ spec:
   ports:
     - port: 27017
       targetPort: 27017
-
-      

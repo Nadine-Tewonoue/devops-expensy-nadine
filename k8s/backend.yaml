@@ -12,12 +12,23 @@ spec:
     metadata:
       labels:
         app: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8706"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: backend
           image: anne2693/expensy-backend:latest
           ports:
             - containerPort: 8706
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           env:
             - name: PORT
               value: "8706"
@@ -25,7 +36,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: expensy-secrets
-                  key: DATABASE_URI
+                  key: database_uri
             - name: REDIS_HOST
               value: "redis"
             - name: REDIS_PORT
@@ -34,7 +45,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: expensy-secrets
-                  key: REDIS_PASSWORD
+                  key: redis_password
 ---
 apiVersion: v1
 kind: Service
@@ -45,5 +56,5 @@ spec:
   selector:
     app: backend
   ports:
-    - port: 80
+    - port: 8706
       targetPort: 8706
