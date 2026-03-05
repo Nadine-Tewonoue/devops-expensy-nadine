@@ -89,7 +89,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: expensy-secrets
-                  key: GRAFANA_URL
+                  key: grafana_url
             - name: GF_SERVER_SERVE_FROM_SUB_PATH
               value: "true"
             - name: GF_PATHS_DATA
