@@ -95,6 +95,10 @@ jobs:
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           GRAFANA_USER: ${{ secrets.GRAFANA_USER }}
           GRAFANA_PASS: ${{ secrets.GRAFANA_PASS }}
+          # Server-side API URL (internal K8s DNS, not public)
+          API_URL: "http://backend:8706"
+          # CORS: allow requests from the public frontend IP
+          ALLOWED_ORIGINS: ${{ secrets.NEXT_PUBLIC_API_URL }}
         run: |
           kubectl apply -f k8s/namespace.yaml
 
@@ -107,7 +111,7 @@ jobs:
           kubectl apply -f k8s/node-exporter.yaml -n expensy
           kubectl apply -f k8s/grafana-pvc.yaml -n expensy
 
-          # Secrets
+          # Secrets (envsubst replaces all env vars above)
           envsubst < k8s/secrets.yaml | kubectl apply -f - -n expensy
 
           # Monitoring Deployments
@@ -161,6 +165,10 @@ jobs:
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           GRAFANA_USER: ${{ secrets.GRAFANA_USER }}
           GRAFANA_PASS: ${{ secrets.GRAFANA_PASS }}
+          # Server-side API URL (internal K8s DNS, not public)
+          API_URL: "http://backend:8706"
+          # CORS: allow requests from the public frontend IP
+          ALLOWED_ORIGINS: ${{ secrets.NEXT_PUBLIC_API_URL }}
         run: |
           kubectl apply -f k8s/namespace.yaml
 
