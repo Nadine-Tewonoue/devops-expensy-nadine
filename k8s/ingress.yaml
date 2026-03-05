@@ -1,38 +1,18 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: expensy-ingress-api
+  name: expensy-ingress
   namespace: expensy
   annotations:
     nginx.ingress.kubernetes.io/use-regex: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /api/$2
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"    # ← add this
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"  # ← add this
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   rules:
-    - http:
-        paths:
-          - path: /api(/|$)(.*)
-            pathType: ImplementationSpecific
-            backend:
-              service:
-                name: backend
-                port:
-                  number: 8706
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: expensy-ingress-tools
-  namespace: expensy
-  annotations:
-    nginx.ingress.kubernetes.io/use-regex: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /$2       # strips prefix for grafana/prometheus
-spec:
-  ingressClassName: nginx
-  rules:
-    - http:
+    - host: 20.82.53.32.nip.io
+      http:
         paths:
           - path: /metrics(/|$)(.*)
             pathType: ImplementationSpecific
@@ -41,7 +21,13 @@ spec:
                 name: prometheus
                 port:
                   number: 9090
-
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8706
           - path: /grafana(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
@@ -49,20 +35,6 @@ spec:
                 name: grafana
                 port:
                   number: 3000
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: expensy-ingress-frontend
-  namespace: expensy
-  annotations:
-    nginx.ingress.kubernetes.io/use-regex: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /$1       # pass through as-is
-spec:
-  ingressClassName: nginx
-  rules:
-    - http:
-        paths:
           - path: /(.*)
             pathType: ImplementationSpecific
             backend:
