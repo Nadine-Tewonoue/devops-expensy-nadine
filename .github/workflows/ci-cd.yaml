@@ -99,6 +99,7 @@ jobs:
           API_URL: ${{ secrets.API_URL }}
           # CORS: allow requests from the public frontend IP
           ALLOWED_ORIGINS: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
         run: |
           kubectl apply -f k8s/namespace.yaml
 

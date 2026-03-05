@@ -86,7 +86,10 @@ spec:
                   name: expensy-secrets
                   key: grafana_pass
             - name: GF_SERVER_ROOT_URL
-              value: http://expensy.example.com/grafana
+              valueFrom:
+                secretKeyRef:
+                  name: expensy-secrets
+                  key: GRAFANA_URL
             - name: GF_SERVER_SERVE_FROM_SUB_PATH
               value: "true"
             - name: GF_PATHS_DATA
