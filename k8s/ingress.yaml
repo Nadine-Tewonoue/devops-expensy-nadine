@@ -1,17 +1,39 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: expensy-ingress
+  name: expensy-ingress-api
   namespace: expensy
   annotations:
     nginx.ingress.kubernetes.io/use-regex: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/rewrite-target: /api/$2
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"    # ← add this
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"  # ← add this
 spec:
   ingressClassName: nginx
   rules:
     - http:
         paths:
-          # Prometheus metrics
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8706
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: expensy-ingress-tools
+  namespace: expensy
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2       # strips prefix for grafana/prometheus
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
           - path: /metrics(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
@@ -20,16 +42,6 @@ spec:
                 port:
                   number: 9090
 
-          # Backend API
-          - path: /api(/|$)(.*)
-            pathType: ImplementationSpecific
-            backend:
-              service:
-                name: backend
-                port:
-                  number: 8706
-
-          # Grafana
           - path: /grafana(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
@@ -37,8 +49,20 @@ spec:
                 name: grafana
                 port:
                   number: 3000
-
-          # Frontend app
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: expensy-ingress-frontend
+  namespace: expensy
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$1       # pass through as-is
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
           - path: /(.*)
             pathType: ImplementationSpecific
             backend:
