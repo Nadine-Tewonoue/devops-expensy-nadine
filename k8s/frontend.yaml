@@ -31,6 +31,8 @@ spec:
                 secretKeyRef:
                   name: expensy-secrets
                   key: API_URL
+            - name: NODE_ENV
+              value: production
 ---
 apiVersion: v1
 kind: Service
