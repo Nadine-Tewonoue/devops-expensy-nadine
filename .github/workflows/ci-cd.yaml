@@ -166,7 +166,7 @@ jobs:
           GRAFANA_USER: ${{ secrets.GRAFANA_USER }}
           GRAFANA_PASS: ${{ secrets.GRAFANA_PASS }}
           # Server-side API URL (internal K8s DNS, not public)
-          API_URL: "http://backend:8706"
+          API_URL: ${{ secrets.API_URL }}
           # CORS: allow requests from the public frontend IP
           ALLOWED_ORIGINS: ${{ secrets.NEXT_PUBLIC_API_URL }}
         run: |
