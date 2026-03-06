@@ -22,18 +22,6 @@ data:
         metrics_path: /metrics
         scrape_interval: 30s
 
-      # Scrape existing AKS node-exporter in monitoring namespace
-      - job_name: 'node-exporter'
-        static_configs:
-          - targets:
-              - '10.224.0.4:9100'
-              - '10.224.0.6:9100'
-        relabel_configs:
-          - source_labels: [__address__]
-            regex: '(.*):.*'
-            target_label: instance
-            replacement: $1
-
       # Kubernetes service discovery for pods with prometheus annotations
       - job_name: 'kubernetes-pods'
         kubernetes_sd_configs:

@@ -3,37 +3,29 @@ kind: Ingress
 metadata:
   name: expensy-ingress
   namespace: expensy
-  annotations:
-    nginx.ingress.kubernetes.io/use-regex: "true"
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   rules:
     - host: 20.82.53.32.nip.io
       http:
         paths:
-          - path: /api/
-            pathType: Prefix
-            backend:
-              service:
-                name: backend
-                port:
-                  number: 8706
-          - path: /grafana/
+
+          - path: /grafana
             pathType: Prefix
             backend:
               service:
                 name: grafana
                 port:
                   number: 3000
-          - path: /metrics/
+
+          - path: /api
             pathType: Prefix
             backend:
               service:
-                name: prometheus
+                name: backend
                 port:
-                  number: 9090
+                  number: 8706
+
           - path: /
             pathType: Prefix
             backend:
@@ -41,3 +33,10 @@ spec:
                 name: frontend
                 port:
                   number: 80
+          - path: /prometheus
+            pathType: Prefix
+            backend:
+              service:
+                  name: prometheus
+                  port:
+                       number: 9090        

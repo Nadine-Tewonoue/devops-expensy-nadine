@@ -1,157 +1,168 @@
-<!-- Final Project: End-to-End DevOps Deployment -->
+xpensy Monitoring Stack
+Project Overview
 
-## Lesson Overview :pencil2:
+This project deploys a full monitoring and dashboard stack on Kubernetes using:
 
-In this project, we will focus on the hands-on implementation of the learnings throughout this program, where you will gain practical insights while setting up the entire DevOps cycle and deploying applications using acquired best practices. 
+Prometheus – metrics collection
 
-<br>
+Node Exporter – node-level metrics
 
-## Learning Objectives :notebook:
+Grafana – visualization dashboards
 
-By the end of this project, you will: 
+Backend & Frontend – application services
 
-1. Apply DevOps practices to a real-world project in a production environment.
-2. Build an effective CI/CD pipeline to automate delivery.
-3. Automate provisioning, configuration and infrastructure management using Terraform and Ansible. 
-4. Deploy and manage containerized applications using Kubernetes. 
-5. Integrate applications with Managed Kubernetes Service and other cloud services
-6. Set up monitoring and create dashboards using Grafana and Prometheus
-7. Resolve issues arising during the entire cycle using best practices
+Redis & MongoDB – supporting services
 
-<br>
+It uses a custom domain (djota.azure.diogohack.shop) via Azure DNS to expose services through an Ingress.
 
-## Project Highlights :key:
+Architecture
+[ Users ] -> [ Ingress / djota.azure.diogohack.shop ] -> [ Frontend / Grafana / Prometheus ]
+                                                      \
+                                                       -> [ Backend ]
+                                                       -> [ Node Exporter ]
+                                                       -> [ Redis / MongoDB ]
 
-### Product Management:
+Grafana dashboards visualize application metrics.
 
-1. This capstone project is a team project, where you will assume roles and work as a scrum team. 
-2. The following indicators will be helpful for the successful completion of your project:         
-    - The duration of one Sprint Cycle is 5 days. So, you will have three Sprint Cycles for this project.
-    - Start with identifying a Scrum Master within your team.
-    - Make sure to follow all scrum events like Sprint, Sprint Planning, Daily Scrum, Sprint Review, Sprint Retrospection.
-    - Plan a Sprint Review at the end of every Sprint Cycle.
-3. Your instructor will be the product owner. If you have any questions regarding the requirements or deliverables, you can address them to the Product Owner.
-4. **Suggestion:** Start with a Team Agreement 
-    - Decide your working hours
-    - Decide your definition of done
-    - Decide your team’s way of work
-    - Identify the time when you will have your scrum events like daily scrum, sprint review, and other scrum events 
-5. We will make use of Azure Boards (or JIRA boards or any other similar tool) to manage work
-6. Please ensure that you have your Daily Scrum and evening sync-up (daily retrospective) every day.
-7. The final sprint review and respective presentations will be held on the last day of the project (during the second half).
+Prometheus scrapes metrics from backend, node-exporter, and Prometheus itself.
 
-<br>
+Node Exporter exposes node-level metrics.
 
-### Pre-requisites
+Ingress routes traffic to services under djota.azure.diogohack.shop.
 
-1. You can use any cloud of your choice (AWS, Azure or Hybrid). Make sure to have an account with free-trial or an account with enough credit.
-2. Create a free account on the DockerHub registry. This account will be used to host docker images used in the project
+Prerequisites
 
-### Web Application Introduction
+Azure Kubernetes Service (AKS) cluster
 
-This sample application is an Expense Tracker with four microservices, a backend built in node, frontend built with Next.js (Node based framework), along with a MongoDB database and Redis caching DB.
+kubectl configured for your cluster
 
-[Clone this repository and share it with the team](https://github.com/saurabhd2106/devops-final-project.git)
+Optional: Helm (for cert-manager / TLS)
 
-Your task is to build a solution for this application that is scalable and can support zero to thousands of users. 
+DuckDNS / Azure DNS domain pointing to cluster IP
 
-### Make sure to use the following:
+Setup Steps
+1. Deploy Core Services
+kubectl apply -f mongo.yaml
+kubectl apply -f redis.yaml
+kubectl apply -f backend.yaml
+kubectl apply -f frontend.yaml
+2. Deploy Prometheus
+kubectl apply -f prometheus.yaml
 
-#### 1. Infrastructure as Code (IaC):
+Ensure only one Prometheus pod is running:
 
-- Use Terraform, AWS CloudFormation, or another IaC tool to define your infrastructure.
+kubectl get pods -n expensy
+3. Deploy Node Exporter
+kubectl apply -f node-exporter.yaml
 
-#### 2. Your infrastructure should include:
+Node Exporter is a DaemonSet. Check pods:
 
-- Compute resources (e.g., EC2 instances, Kubernetes clusters).
-- Networking resources (e.g., VPC, subnets, security groups).
-- Storage resources (e.g., S3 buckets, RDS instances).
-- Continuous Integration/Continuous Deployment (CI/CD):
+kubectl get pods -n expensy -l app=node-exporter
+4. Deploy Grafana
+kubectl apply -f grafana.yaml
 
-#### 3. Implement a CI/CD pipeline using tools such as Jenkins, GitLab CI, or GitHub Actions.
+Reset admin password (if needed):
 
-The pipeline should:
-- Automatically build and test your application.
-- Deploy the application to a staging environment.
-- Deploy to production upon approval.
+kubectl exec -n expensy $(kubectl get pods -n expensy -l app=grafana -o jsonpath="{.items[0].metadata.name}") -- grafana-cli admin reset-admin-password admin123
+5. Setup Azure DNS
 
-#### 4. Containerization and Orchestration:
-- Containerize your application using Docker.
-- Use Kubernetes or Docker Swarm for orchestration to ensure your application can scale horizontally.
+Go to your Azure DNS Zone: azure.diogohack.shop
 
-#### 5. Monitoring and Logging:
+Create a record set:
 
-- Implement monitoring using tools like Prometheus, Grafana, or AWS CloudWatch.
+Name: djota
 
-#### 6. Autoscaling:
+Type: A
 
-- Configure autoscaling for your compute resources (e.g., AWS Auto Scaling groups, Kubernetes Horizontal Pod Autoscaler) to handle varying loads.
+Value: Your LoadBalancer public IP (kubectl get svc -n expensy frontend)
 
-#### 7. Security and Compliance:
+Wait for DNS propagation (usually a few minutes).
 
-- Implement best security practices, including network security (firewalls, security groups), data encryption, and IAM policies.
-- Ensure compliance with relevant standards (e.g., GDPR, HIPAA) as applicable.
+6. Configure Ingress
 
-### Deliverables:
+Example ingress.yaml:
 
-#### 1. Infrastructure Code:
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: expensy-ingress
+  namespace: expensy
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+    - host: djota.azure.diogohack.shop
+      http:
+        paths:
+          - path: /grafana
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000
+          - path: /prometheus
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus
+                port:
+                  number: 9090
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
 
-- Provide all IaC scripts and configuration files like Terraform scripts, AWS CloudFormation templates, Ansible playbooks, etc.
-- Include documentation explaining the infrastructure setup and how to deploy it.
+Apply it:
 
-#### 2. CI/CD Pipeline Configuration:
+kubectl apply -f ingress.yaml
 
-- Provide the CI/CD pipeline configuration files like Jenkinsfile, GitHub Actions workflows, etc.
-- Include detailed documentation on how to set up and use the pipeline.
+Access in browser:
 
-#### 3. Application Containerization and Orchestration:
+http://djota.azure.diogohack.shop/ → frontend
 
-- Provide Dockerfiles and Kubernetes/Docker Swarm configuration files.
-- Include documentation on how to build and deploy the containers.
+http://djota.azure.diogohack.shop/grafana → Grafana
 
-#### 4. Monitoring and Logging Configuration:
+http://djota.azure.diogohack.shop/prometheus → Prometheus
 
-- Provide configuration files for monitoring and logging tools, including Prometheus configuration, Grafana dashboards, ELK stack configuration, etc.
-- Include documentation on how to set up and interpret the monitoring and logging data.
+Verification
 
-#### 5. Autoscaling Configuration:
+Prometheus metrics:
 
-- Provide configuration files or scripts for autoscaling.
-- Include documentation explaining the autoscaling policies, criteria for scaling, how to simulate load to test autoscaling, commands to check the current scaling status, etc. 
+kubectl port-forward svc/prometheus 9090:9090 -n expensy
 
-#### 6. Security and Compliance Documentation:
+Visit: http://localhost:9090/targets
 
-- Provide a security overview document detailing the measures implemented.
-- Include compliance checklists and how your solution adheres to them.
+Grafana dashboards:
 
-### Evaluation Criteria:
+Node Exporter Full
 
-1. Scalability:
+Application metrics dashboards
 
-- The solution should handle increasing loads efficiently.
-- Autoscaling should work as expected, without degrading performance.
-- Infrastructure should be able to scale horizontally (adding more instances) or vertically (upgrading existing instances) as needed.
+Node Exporter:
 
-2. Reliability:
+Ensure pods are running on all nodes:
 
-- The CI/CD pipeline should deploy the application without errors.
-- Monitoring and logging should provide useful insights into the application’s health.
-- The pipeline should be ready for smooth integration of new code and features.
+kubectl get pods -n expensy -l app=node-exporter
+Optional: Enable HTTPS
 
-3. Security:
+Install cert-manager
 
-- The solution should follow best security practices.
-- Compliance with relevant standards should be documented.
+Update Ingress annotations for TLS using your DuckDNS / Azure DNS domain
 
-4. Documentation:
+Troubleshooting
 
-- The documentation should be clear and comprehensive documentation for each component.
-- Ease of understanding and reproducibility must be considered while documenting all components. 
+No data in Grafana?
 
-<!-- ## Additional Resources :clipboard: 
+Check Prometheus targets: http://djota.azure.diogohack.shop:9090/targets
 
-If you would like to study these concepts before the class or would benefit from some remedial studying, please utilize the resources below: -->
+Verify Node Exporter pods are running
 
-<br>
+Prometheus pod crash → ensure single replica and PVC is available
 
-**Good luck!**
+Ingress 404 errors → check:
+
+kubectl describe ingress expensy-ingress -n expensy
