@@ -1,168 +1,131 @@
-xpensy Monitoring Stack
-Project Overview
+Expensy Monitoring Stack
 
-This project deploys a full monitoring and dashboard stack on Kubernetes using:
+Expensy is a full-stack application deployed on Azure Kubernetes Service (AKS), with integrated monitoring using Prometheus and Grafana. This project contains the backend, frontend, and all Kubernetes manifests required to deploy the stack.
 
-Prometheus – metrics collection
-
-Node Exporter – node-level metrics
-
-Grafana – visualization dashboards
-
-Backend & Frontend – application services
-
-Redis & MongoDB – supporting services
-
-It uses a custom domain (djota.azure.diogohack.shop) via Azure DNS to expose services through an Ingress.
-
-Architecture
-[ Users ] -> [ Ingress / djota.azure.diogohack.shop ] -> [ Frontend / Grafana / Prometheus ]
-                                                      \
-                                                       -> [ Backend ]
-                                                       -> [ Node Exporter ]
-                                                       -> [ Redis / MongoDB ]
-
-Grafana dashboards visualize application metrics.
-
-Prometheus scrapes metrics from backend, node-exporter, and Prometheus itself.
-
-Node Exporter exposes node-level metrics.
-
-Ingress routes traffic to services under djota.azure.diogohack.shop.
-
+Project Structure
+.
+├── k8s/                     # Kubernetes manifests
+├── helm/expensy/            # Helm charts (optional)
+├── expensy_backend/         # Backend Node.js app
+├── expensy_frontend/        # Frontend Next.js app
+├── docker-compose.yml       # Local development with Docker
+├── create-aks-cluster.sh    # Script to provision AKS
+├── apply-yaml.sh            # Script to deploy Kubernetes resources
+└── stop-azure.sh            # Script to clean up Azure resources
 Prerequisites
 
-Azure Kubernetes Service (AKS) cluster
+Azure CLI installed and logged in
 
-kubectl configured for your cluster
+kubectl installed
 
-Optional: Helm (for cert-manager / TLS)
+Helm (optional, if you use Helm charts)
 
-DuckDNS / Azure DNS domain pointing to cluster IP
+Docker for building local images
 
-Setup Steps
-1. Deploy Core Services
-kubectl apply -f mongo.yaml
-kubectl apply -f redis.yaml
-kubectl apply -f backend.yaml
-kubectl apply -f frontend.yaml
-2. Deploy Prometheus
-kubectl apply -f prometheus.yaml
+A DuckDNS / custom domain pointing to your cluster’s public IP
 
-Ensure only one Prometheus pod is running:
+Deployment Steps
+1. Create an AKS Cluster
+./create-aks-cluster.sh --resource-group <RG_NAME> --lb-name <LB_NAME> --output <OUTPUT_FILE>
+2. Apply Kubernetes Manifests
+./apply-yaml.sh
 
-kubectl get pods -n expensy
-3. Deploy Node Exporter
-kubectl apply -f node-exporter.yaml
+This will deploy:
 
-Node Exporter is a DaemonSet. Check pods:
+Backend: Node.js API
+
+Frontend: Next.js app
+
+MongoDB & Redis
+
+Prometheus + Grafana
+
+Node Exporter for monitoring
+
+Ingress with your custom domain
+
+3. Configure Domain
+
+Use your DuckDNS or Azure DNS to point a subdomain to your cluster ingress IP.
+
+Example: djota.azure.diogohack.shop → <INGRESS_PUBLIC_IP>
+
+Update all ingress manifests to use your custom domain instead of .nip.io.
+
+Accessing Services
+Service	Type	URL / Port
+Frontend	LoadBalancer	http://djota.azure.diogohack.shop
+
+Backend	ClusterIP	internal: backend.expensy.svc.cluster.local:8706
+Grafana	ClusterIP	internal: grafana.expensy.svc.cluster.local:3000
+Prometheus	ClusterIP	internal: prometheus.expensy.svc.cluster.local:9090
+
+Port-forwarding for local access:
+
+kubectl port-forward svc/grafana 3000:3000 -n expensy
+kubectl port-forward svc/prometheus 9090:9090 -n expensy
+Monitoring
+Grafana
+
+Access Grafana at your custom domain or via port-forward.
+
+Login with admin credentials (reset with grafana-cli if needed).
+
+Import dashboards:
+
+Node Exporter
+
+Prometheus metrics
+
+Verify that Node Exporter pods are running:
 
 kubectl get pods -n expensy -l app=node-exporter
-4. Deploy Grafana
-kubectl apply -f grafana.yaml
+Prometheus
 
-Reset admin password (if needed):
-
-kubectl exec -n expensy $(kubectl get pods -n expensy -l app=grafana -o jsonpath="{.items[0].metadata.name}") -- grafana-cli admin reset-admin-password admin123
-5. Setup Azure DNS
-
-Go to your Azure DNS Zone: azure.diogohack.shop
-
-Create a record set:
-
-Name: djota
-
-Type: A
-
-Value: Your LoadBalancer public IP (kubectl get svc -n expensy frontend)
-
-Wait for DNS propagation (usually a few minutes).
-
-6. Configure Ingress
-
-Example ingress.yaml:
-
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: expensy-ingress
-  namespace: expensy
-  annotations:
-    kubernetes.io/ingress.class: nginx
-spec:
-  rules:
-    - host: djota.azure.diogohack.shop
-      http:
-        paths:
-          - path: /grafana
-            pathType: Prefix
-            backend:
-              service:
-                name: grafana
-                port:
-                  number: 3000
-          - path: /prometheus
-            pathType: Prefix
-            backend:
-              service:
-                name: prometheus
-                port:
-                  number: 9090
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend
-                port:
-                  number: 80
-
-Apply it:
-
-kubectl apply -f ingress.yaml
-
-Access in browser:
-
-http://djota.azure.diogohack.shop/ → frontend
-
-http://djota.azure.diogohack.shop/grafana → Grafana
-
-http://djota.azure.diogohack.shop/prometheus → Prometheus
-
-Verification
-
-Prometheus metrics:
+Verify targets:
 
 kubectl port-forward svc/prometheus 9090:9090 -n expensy
 
-Visit: http://localhost:9090/targets
-
-Grafana dashboards:
-
-Node Exporter Full
-
-Application metrics dashboards
-
-Node Exporter:
-
-Ensure pods are running on all nodes:
-
-kubectl get pods -n expensy -l app=node-exporter
-Optional: Enable HTTPS
-
-Install cert-manager
-
-Update Ingress annotations for TLS using your DuckDNS / Azure DNS domain
+Open http://localhost:9090/targets to ensure all services are scraped.
 
 Troubleshooting
 
-No data in Grafana?
+No data in Grafana
 
-Check Prometheus targets: http://djota.azure.diogohack.shop:9090/targets
+Ensure Node Exporter pods are running.
 
-Verify Node Exporter pods are running
+Ensure Prometheus is scraping the correct endpoints.
 
-Prometheus pod crash → ensure single replica and PVC is available
+Check pod logs:
 
-Ingress 404 errors → check:
+kubectl logs <prometheus-pod> -n expensy
+kubectl logs <node-exporter-pod> -n expensy
 
-kubectl describe ingress expensy-ingress -n expensy
+Pod stuck in Pending
+
+Check events:
+
+kubectl describe pod <pod-name> -n expensy
+
+Verify node resources, hostPorts, and tolerations.
+
+Dashboard import fails
+
+Check UID conflicts in Grafana and choose “Import (Overwrite)” if needed.
+
+Scripts
+
+create-aks-cluster.sh – Provision AKS cluster
+
+apply-yaml.sh – Deploy manifests to AKS
+
+stop-azure.sh – Cleanup resources in Azure
+
+Notes
+
+Use your custom domain in all ingress and environment variables.
+
+For monitoring, Node Exporter and Prometheus must run one pod per cluster.
+
+Persistent Volumes are used for Grafana and Prometheus data.
+
