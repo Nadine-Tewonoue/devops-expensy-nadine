@@ -1,3 +1,4 @@
-expensy-secrets.yaml
-create-aks-cluster.sh
-stop-azure.sh
+./expensy-secrets.yaml
+./create-aks-cluster.sh
+./stop-azure.sh
+./docker.sh
