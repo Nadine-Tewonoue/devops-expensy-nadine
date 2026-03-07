@@ -1,131 +1,174 @@
-Expensy Monitoring Stack
+# Expensy - Cloud Native Expense Tracker
 
-Expensy is a full-stack application deployed on Azure Kubernetes Service (AKS), with integrated monitoring using Prometheus and Grafana. This project contains the backend, frontend, and all Kubernetes manifests required to deploy the stack.
+Expensy is a cloud-native expense tracking application deployed on **Azure Kubernetes Service (AKS)**.  
+The project demonstrates **containerization, Kubernetes orchestration, monitoring, and cloud infrastructure deployment**.
 
-Project Structure
+The application consists of a **Next.js frontend**, **Node.js backend**, **MongoDB database**, and a **monitoring stack with Prometheus and Grafana**.
+
+---
+
+## Project Architecture
+
+The system is deployed using **Kubernetes microservices architecture**.
+
+Main components:
+
+- Frontend (Next.js)
+- Backend API (Node.js)
+- MongoDB database
+- Redis cache
+- Kubernetes Ingress Controller
+- Prometheus monitoring
+- Grafana dashboards
+
+Users access the application through a custom domain:
+http://djota.azure.diogohack.shop
+
+
+Traffic flow:
+
+User → Ingress → Kubernetes Services → Application Pods
+
+---
+
+## Project Structure
 .
-├── k8s/                     # Kubernetes manifests
-├── helm/expensy/            # Helm charts (optional)
-├── expensy_backend/         # Backend Node.js app
-├── expensy_frontend/        # Frontend Next.js app
-├── docker-compose.yml       # Local development with Docker
-├── create-aks-cluster.sh    # Script to provision AKS
-├── apply-yaml.sh            # Script to deploy Kubernetes resources
-└── stop-azure.sh            # Script to clean up Azure resources
-Prerequisites
+├── apply-yaml.sh
+├── create-aks-cluster.sh
+├── docker-compose.yml
+├── docker.sh
+├── expensy_backend
+├── expensy_frontend
+├── helm
+├── k8s
+└── stop-azure.sh
 
-Azure CLI installed and logged in
+### Key Directories
 
-kubectl installed
+**expensy_frontend**
 
-Helm (optional, if you use Helm charts)
+Contains the Next.js frontend application.
 
-Docker for building local images
+**expensy_backend**
 
-A DuckDNS / custom domain pointing to your cluster’s public IP
+Contains the Node.js backend API.
 
-Deployment Steps
-1. Create an AKS Cluster
-./create-aks-cluster.sh --resource-group <RG_NAME> --lb-name <LB_NAME> --output <OUTPUT_FILE>
-2. Apply Kubernetes Manifests
+**k8s**
+
+Kubernetes manifests including:
+
+- deployments
+- services
+- ingress
+- secrets
+- persistent volumes
+
+**helm**
+
+Helm chart used to deploy the application.
+
+---
+
+## Technologies Used
+
+- Docker
+- Kubernetes
+- Azure Kubernetes Service (AKS)
+- Node.js
+- Next.js
+- MongoDB
+- Redis
+- Prometheus
+- Grafana
+- Helm
+
+---
+
+## Deployment Steps
+
+### 1 Create Azure Kubernetes Cluster
+
+Run the script:
+
+```bash
+./create-aks-cluster.sh
+
+2 Build Docker Images
+./docker.sh
+3 Deploy Kubernetes Resources
 ./apply-yaml.sh
+4 Verify Pods
+kubectl get pods -n expensy
+5 Access Application
 
-This will deploy:
+Open:
 
-Backend: Node.js API
 
-Frontend: Next.js app
+http://djota.azure.diogohack.shop
 
-MongoDB & Redis
-
-Prometheus + Grafana
-
-Node Exporter for monitoring
-
-Ingress with your custom domain
-
-3. Configure Domain
-
-Use your DuckDNS or Azure DNS to point a subdomain to your cluster ingress IP.
-
-Example: djota.azure.diogohack.shop → <INGRESS_PUBLIC_IP>
-
-Update all ingress manifests to use your custom domain instead of .nip.io.
-
-Accessing Services
-Service	Type	URL / Port
-Frontend	LoadBalancer	http://djota.azure.diogohack.shop
-
-Backend	ClusterIP	internal: backend.expensy.svc.cluster.local:8706
-Grafana	ClusterIP	internal: grafana.expensy.svc.cluster.local:3000
-Prometheus	ClusterIP	internal: prometheus.expensy.svc.cluster.local:9090
-
-Port-forwarding for local access:
-
-kubectl port-forward svc/grafana 3000:3000 -n expensy
-kubectl port-forward svc/prometheus 9090:9090 -n expensy
 Monitoring
-Grafana
 
-Access Grafana at your custom domain or via port-forward.
+The project includes a monitoring stack:
 
-Login with admin credentials (reset with grafana-cli if needed).
-
-Import dashboards:
-
-Node Exporter
-
-Prometheus metrics
-
-Verify that Node Exporter pods are running:
-
-kubectl get pods -n expensy -l app=node-exporter
 Prometheus
 
-Verify targets:
+Collects metrics from Kubernetes nodes and services.
 
-kubectl port-forward svc/prometheus 9090:9090 -n expensy
+Example query:
 
-Open http://localhost:9090/targets to ensure all services are scraped.
 
-Troubleshooting
+up
 
-No data in Grafana
+Grafana
 
-Ensure Node Exporter pods are running.
+Used for visualizing Prometheus metrics through dashboards.
 
-Ensure Prometheus is scraping the correct endpoints.
+Challenges Faced
+Monitoring
 
-Check pod logs:
+The project includes a monitoring stack:
 
-kubectl logs <prometheus-pod> -n expensy
-kubectl logs <node-exporter-pod> -n expensy
+Prometheus
 
-Pod stuck in Pending
+Collects metrics from Kubernetes nodes and services.
 
-Check events:
+Example query:
 
-kubectl describe pod <pod-name> -n expensy
 
-Verify node resources, hostPorts, and tolerations.
+up
 
-Dashboard import fails
+Grafana
 
-Check UID conflicts in Grafana and choose “Import (Overwrite)” if needed.
+Used for visualizing Prometheus metrics through dashboards.
 
-Scripts
+Challenges Faced
 
-create-aks-cluster.sh – Provision AKS cluster
+Some challenges encountered during development:
 
-apply-yaml.sh – Deploy manifests to AKS
+Configuring Kubernetes Ingress and Load Balancer
 
-stop-azure.sh – Cleanup resources in Azure
+Managing persistent storage for MongoDB
 
-Notes
+Setting up monitoring with Prometheus and Grafana
 
-Use your custom domain in all ingress and environment variables.
+Debugging Kubernetes pods and networking
 
-For monitoring, Node Exporter and Prometheus must run one pod per cluster.
+Managing secrets securely
 
-Persistent Volumes are used for Grafana and Prometheus data.
+Future Improvements
 
+Possible improvements for the project:
+
+Implement CI/CD pipeline
+
+Add authentication and authorization
+
+Improve autoscaling with HPA
+
+Use managed cloud databases
+
+Author
+
+Nadine
+
+Cloud Native / DevOps Project
